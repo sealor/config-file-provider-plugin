@@ -97,6 +97,7 @@ public class MvnGlobalSettingsProvider extends GlobalSettingsProvider {
 
                             if (resolvedCredentials != null && !resolvedCredentials.isEmpty()) {
                                 List<String> tempFiles = new ArrayList<String>();
+                                fileContent = CredentialsHelper.fillProxyAuthentication(fileContent, resolvedCredentials);
                                 fileContent = CredentialsHelper.fillAuthentication(fileContent, isReplaceAll, resolvedCredentials, workDir, tempFiles);
                                 for (String tempFile : tempFiles) {
                                     build.addAction(new CleanTempFilesAction(tempFile));

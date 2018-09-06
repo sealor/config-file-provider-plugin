@@ -72,6 +72,7 @@ public abstract class AbstractMavenSettingsProvider extends AbstractConfigProvid
         String fileContent = super.supplyContent(configFile, build, workDir, listener, tempFiles);
         if (!resolvedCredentials.isEmpty()) {
             try {
+                fileContent = CredentialsHelper.fillProxyAuthentication(fileContent, resolvedCredentials);
                 fileContent = CredentialsHelper.fillAuthentication(fileContent, isReplaceAll, resolvedCredentials, workDir, tempFiles);
             } catch (Exception exception) {
                 throw new IOException("[ERROR] could not insert credentials into the settings file " + configFile, exception);

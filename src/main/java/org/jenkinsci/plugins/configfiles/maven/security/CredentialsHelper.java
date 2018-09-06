@@ -1,19 +1,21 @@
 
 package org.jenkinsci.plugins.configfiles.maven.security;
 
-import java.io.StringReader;
-import java.io.StringWriter;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import com.cloudbees.jenkins.plugins.sshcredentials.SSHUserPrivateKey;
+import com.cloudbees.plugins.credentials.CredentialsProvider;
+import com.cloudbees.plugins.credentials.common.StandardUsernameCredentials;
+import com.cloudbees.plugins.credentials.common.StandardUsernamePasswordCredentials;
+import com.cloudbees.plugins.credentials.domains.DomainRequirement;
+import hudson.FilePath;
+import hudson.model.Run;
+import hudson.model.TaskListener;
+import hudson.util.Secret;
+import org.apache.commons.lang.StringUtils;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.xml.sax.InputSource;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.transform.OutputKeys;
@@ -24,24 +26,12 @@ import javax.xml.transform.stream.StreamResult;
 import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathFactory;
-
-import org.apache.commons.lang.StringUtils;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
-import org.xml.sax.InputSource;
-
-import com.cloudbees.jenkins.plugins.sshcredentials.SSHUserPrivateKey;
-import com.cloudbees.plugins.credentials.CredentialsProvider;
-import com.cloudbees.plugins.credentials.common.StandardUsernameCredentials;
-import com.cloudbees.plugins.credentials.common.StandardUsernamePasswordCredentials;
-import com.cloudbees.plugins.credentials.domains.DomainRequirement;
-
-import hudson.FilePath;
-import hudson.model.Run;
-import hudson.model.TaskListener;
-import hudson.util.Secret;
+import java.io.StringReader;
+import java.io.StringWriter;
+import java.util.*;
+import java.util.Map.Entry;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class CredentialsHelper {
 
@@ -206,6 +196,59 @@ public class CredentialsHelper {
                         new Object[]{mavenServerId, credential == null ? null : credential.getId(), credential == null ? null : credential.getClass()});
             }
 
+        }
+
+        // save the result
+        StringWriter writer = new StringWriter();
+        Transformer xformer = TransformerFactory.newInstance().newTransformer();
+        xformer.setOutputProperty(OutputKeys.INDENT, "yes");
+        xformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "2");
+        xformer.transform(new DOMSource(doc), new StreamResult(writer));
+        content = writer.toString();
+
+        return content;
+    }
+
+    /**
+     * @param mavenSettingsContent            Maven settings.xml (must be valid XML)
+     * @param mavenServerId2jenkinsCredential the credentials to be inserted into the XML (key: Maven serverId, value: Jenkins credentials)
+     * @return the updated version of the {@code mavenSettingsContent} with the server credentials added
+     */
+    public static String fillProxyAuthentication(String mavenSettingsContent,
+                                                 Map<String, StandardUsernameCredentials> mavenServerId2jenkinsCredential) throws Exception {
+        String content = mavenSettingsContent;
+
+        if (mavenServerId2jenkinsCredential.isEmpty()) {
+            return mavenSettingsContent;
+        }
+
+        Document doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(new InputSource(new StringReader(content)));
+
+        XPath xpath = XPathFactory.newInstance().newXPath();
+        NodeList proxies = (NodeList) xpath.evaluate("/settings/proxies/proxy", doc, XPathConstants.NODESET);
+
+        for (int i = 0; i < proxies.getLength(); i++) {
+            Node proxy = proxies.item(i);
+            String proxyId = xpath.evaluate("./id", proxy, XPathConstants.STRING).toString();
+
+            StandardUsernameCredentials proxyCredentials = mavenServerId2jenkinsCredential.get(proxyId);
+            if (proxyCredentials instanceof StandardUsernamePasswordCredentials) {
+                StandardUsernamePasswordCredentials userCredentials = (StandardUsernamePasswordCredentials) proxyCredentials;
+
+                Node proxyUsername = (Node) xpath.evaluate("./username", proxy, XPathConstants.NODE);
+                if (proxyUsername == null) {
+                    proxyUsername = doc.createElement("username");
+                    proxy.appendChild(proxyUsername);
+                }
+                proxyUsername.setTextContent(userCredentials.getUsername());
+
+                Node proxyPassword = (Node) xpath.evaluate("./password", proxy, XPathConstants.NODE);
+                if (proxyPassword == null) {
+                    proxyPassword = doc.createElement("password");
+                    proxy.appendChild(proxyPassword);
+                }
+                proxyPassword.setTextContent(Secret.toString(userCredentials.getPassword()));
+            }
         }
 
         // save the result

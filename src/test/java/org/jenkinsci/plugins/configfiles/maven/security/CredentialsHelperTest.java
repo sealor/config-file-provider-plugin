@@ -92,6 +92,40 @@ public class CredentialsHelperTest {
     }
 
     @Test
+    public void testIfServerAuthIsReplacedWithinProxySettingsXmlWhenReplaceTrue() throws Exception {
+
+        Map<String, StandardUsernameCredentials> serverId2Credentials = new HashMap<String, StandardUsernameCredentials>();
+        serverId2Credentials.put("proxy1", new UsernamePasswordCredentialsImpl(CredentialsScope.SYSTEM, "UUID-1", "some desc", "peter", PWD));
+        serverId2Credentials.put("proxy2", new UsernamePasswordCredentialsImpl(CredentialsScope.SYSTEM, "UUID-2", "some desc2", "dan", PWD_2));
+
+        final String settingsContent = IOUtils.toString(CredentialsHelperTest.class.getResourceAsStream("/settings_test.xml"));
+
+        final String replacedContent = CredentialsHelper.fillProxyAuthentication(settingsContent, serverId2Credentials);
+
+        Assert.assertTrue("replaced settings.xml must contain new password", replacedContent.contains(PWD));
+
+        // ensure it is still a valid XML document
+        Document doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(new InputSource(new StringReader(replacedContent)));
+        // locate the node(s)
+        XPath xpath = XPathFactory.newInstance().newXPath();
+        NodeList nodes = (NodeList) xpath.evaluate("/settings/proxies/proxy", doc, XPathConstants.NODESET);
+        Assert.assertEquals("no proxy tag should be removed in the settings.xml", 3, nodes.getLength());
+
+        Node proxy1 = (Node) xpath.evaluate("/settings/proxies/proxy[id='proxy1']", doc, XPathConstants.NODE);
+        Assert.assertEquals("password is not at the correct location", PWD, xpath.evaluate("password", proxy1));
+        Assert.assertEquals("username is not set correct", "peter", xpath.evaluate("username", proxy1));
+
+        Node proxy2 = (Node) xpath.evaluate("/settings/proxies/proxy[id='proxy2']", doc, XPathConstants.NODE);
+        Assert.assertEquals("password is not set correct", PWD_2, xpath.evaluate("password", proxy2));
+        Assert.assertEquals("username is not set correct", "dan", xpath.evaluate("username", proxy2));
+
+        Node proxy3 = (Node) xpath.evaluate("/settings/proxies/proxy[id='proxy3']", doc, XPathConstants.NODE);
+        Assert.assertEquals("proxy3 should still not have a password", "", xpath.evaluate("password", proxy3));
+        Assert.assertEquals("proxy3 should still not have a username", "", xpath.evaluate("username", proxy3));
+
+    }
+
+    @Test
     public void testSettingsXmlIsNotChangedWithoutCredentialsWhenReplaceTrue() throws Exception {
 
         Map<String, StandardUsernameCredentials> serverId2Credentials = new HashMap<String, StandardUsernameCredentials>();
